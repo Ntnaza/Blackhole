@@ -64,42 +64,38 @@ function generateStars() {
     positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
     positions[i * 3 + 2] = r * Math.cos(phi)
     
-    // Warna — BIRU TUA dominan (akan dipudarkan jadi biru pas)
-    const rng = Math.random()
-    if (rng > 0.94) {
-      // Oranye/merah (~6%)
-      color.setHSL(0.04 + Math.random() * 0.07, 0.9, 0.5 + Math.random() * 0.15)
-    } else if (rng > 0.82) {
-      // Kuning/amber (~12%)
-      color.setHSL(0.1 + Math.random() * 0.07, 0.85, 0.55 + Math.random() * 0.15)
-    } else if (rng > 0.30) {
-      // Biru TUA cerah (~52%) — DOMINAN
-      color.setHSL(0.58 + Math.random() * 0.1, 0.85, 0.4 + Math.random() * 0.15)
+    // Warna dibagi SAMA RATA (masing-masing 25%):
+    // 1. Biru (Blue / Sapphire) — 25%
+    // 2. Kuning / Emas (Golden Yellow) — 25%
+    // 3. Oranye (Warm Amber / Orange) — 25%
+    // 4. Merah / Ruby (Crimson / Red) — 25%
+    const colorCategory = i % 4
+    if (colorCategory === 0) {
+      // Biru
+      color.setHSL(0.58 + Math.random() * 0.08, 0.85, 0.45 + Math.random() * 0.12)
+    } else if (colorCategory === 1) {
+      // Kuning / Emas
+      color.setHSL(0.12 + Math.random() * 0.05, 0.90, 0.50 + Math.random() * 0.12)
+    } else if (colorCategory === 2) {
+      // Oranye
+      color.setHSL(0.06 + Math.random() * 0.04, 0.95, 0.48 + Math.random() * 0.12)
     } else {
-      // Biru TUA sedang (~30%)
-      color.setHSL(0.56 + Math.random() * 0.1, 0.8, 0.45 + Math.random() * 0.1)
+      // Merah / Ruby
+      color.setHSL(0.00 + Math.random() * 0.04, 0.92, 0.48 + Math.random() * 0.12)
     }
     
     colors[i * 3] = color.r
     colors[i * 3 + 1] = color.g
     colors[i * 3 + 2] = color.b
     
-    // Variasi ukuran
+    // Variasi ukuran (mempertahankan warna masing-masing)
     const sizeRng = Math.random()
     if (sizeRng > 0.97) {
-      // Bintang besar (~3%) — PAKSA biru tua terang
+      // Bintang besar (~3%)
       sizes[i] = 4.5 + Math.random() * 2.5
-      color.setHSL(0.58 + Math.random() * 0.1, 0.9, 0.4 + Math.random() * 0.12)
-      colors[i * 3] = color.r
-      colors[i * 3 + 1] = color.g
-      colors[i * 3 + 2] = color.b
     } else if (sizeRng > 0.90) {
-      // Bintang agak besar (~7%) — biru tua
+      // Bintang agak besar (~7%)
       sizes[i] = 2.5 + Math.random() * 2.0
-      color.setHSL(0.57 + Math.random() * 0.12, 0.85, 0.42 + Math.random() * 0.13)
-      colors[i * 3] = color.r
-      colors[i * 3 + 1] = color.g
-      colors[i * 3 + 2] = color.b
     } else if (sizeRng > 0.65) {
       // Bintang sedang (~25%)
       sizes[i] = 1.2 + Math.random() * 1.3
