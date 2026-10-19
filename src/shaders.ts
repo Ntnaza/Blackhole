@@ -14,6 +14,9 @@ export const fragmentShader = `
   uniform vec2 uResolution;
   uniform vec3 uCameraPos;
   uniform float uTilt;
+  uniform sampler2D uStarTexture;
+  uniform mat4 uProjMatrix;
+  uniform mat4 uViewMat;
   varying vec2 vUv;
   varying vec3 vWorldPosition;
 
@@ -50,20 +53,8 @@ export const fragmentShader = `
       return f;
   }
 
-  // ==========================================
-  // ANTI-ALIASED PERFECT STARS
-  // ==========================================
-  float smoothStar(vec3 dir, float scale) {
-      vec3 p = dir * scale;
-      vec3 i = floor(p);
-      vec3 f = fract(p);
-      float d = length(f - vec3(0.5));
-      float h = hash(i);
-      
-      float starVal = smoothstep(0.4, 0.1, d); 
-      starVal *= smoothstep(0.996, 1.0, h); 
-      return starVal;
-  }
+  // Bintang sekarang dirender sebagai partikel 3D oleh Starfield3D.tsx
+  // Shader hanya menangani blackhole, accretion disk, dan galaxy glow
 
   void main() {
       vec3 ro = uCameraPos;
@@ -87,12 +78,12 @@ export const fragmentShader = `
       float photonGlow = 0.0;
 
       // ==========================================
-      // GARGANTUA ACCRETION DISK (Lebar, Elegan, Icy White)
+      // GARGANTUA ACCRETION DISK — Interstellar Texture, Monokrom
       // ==========================================
-      float diskInner = RS * 2.6; 
-      float diskOuter = RS * 18.0; 
-      float diskThickness = 0.15; 
-      float maxR = 40.0; // Radius simulasi dikembalikan ke 40 untuk performa maksimal tanpa cacat cincin
+      float diskInner = RS * 2.5; 
+      float diskOuter = RS * 14.0;  // Disk lebih ramping
+      float diskThickness = 0.1;   // Lebih tipis lagi
+      float maxR = 40.0;
       
       float r0 = length(p);
       if (r0 > maxR) {
@@ -100,7 +91,6 @@ export const fragmentShader = `
           float c_sph = dot(p, p) - maxR * maxR;
           float det = b * b - c_sph;
           if (det > 0.0) {
-              // Maju hingga sedikit masuk ke dalam bola (0.01) untuk mencegah bug presisi desimal (shattered circle fix)
               float t = -b - sqrt(det) + 0.01; 
               if (t > 0.0) p += v * t;
           }
@@ -116,23 +106,16 @@ export const fragmentShader = `
           }
           if (r > maxR) break; 
 
-          // Adaptive step (Cepat, efisien, dan presisi)
           float dt = 0.05 + 0.04 * r; 
           float dR = length(p.xz);
 
           vec3 a = -1.5 * RS * h2 * p / (r2 * r2 * r);
-          
-          // [FIX] Memudarkan gravitasi secara perlahan dari R=15 hingga R=40
-          // Menghilangkan cincin batas tanpa perlu merender terlalu jauh
           a *= smoothstep(maxR, 15.0, r); 
           
-          // Rendering Cakram Akresi - Evaluasi pra-langkah untuk Anti-Aliasing
           float h = abs(p.y);
           float pixelSize = length(uCameraPos) * 0.002;
           float effThickness = max(diskThickness + dt * 0.5, pixelSize); 
           
-          // [FIX] Cegah undersampling: Paksa langkah menjadi lebih kecil SAAT berada di dalam cakram virtual
-          // Ini menjamin sinar akan mengambil minimal 2.5 sampel di dalam ketebalan cakram, menghilangkan celah gelap (terpotong)
           if (dR > diskInner - 1.0 && dR < diskOuter + 2.0 && h < effThickness * 1.5) {
               dt = min(dt, effThickness * 0.4); 
           }
@@ -140,31 +123,51 @@ export const fragmentShader = `
           v = normalize(v + a * dt);
           p += v * dt;
 
+          // ==========================================
+          // PHOTON RING — Cincin tipis terang di photon sphere (r = 1.5 RS)
+          // Sangat tajam dan intens seperti referensi
+          // ==========================================
           float distToPhoton = abs(r - 1.5 * RS);
-          photonGlow += exp(-distToPhoton * 40.0) * dt * trans * 3.0;
+          photonGlow += exp(-distToPhoton * 60.0) * dt * trans * 5.0;
+          
+          // Inner glow — cahaya redup di dekat event horizon
+          float innerGlow = exp(-abs(r - RS * 1.2) * 15.0) * dt * trans * 1.5;
+          photonGlow += innerGlow;
           
           if (dR > diskInner && dR < diskOuter && h < effThickness) {
               
-              // [FIX] Inner edge lebih tajam mirip referensi asli
-              float radialFalloff = smoothstep(diskOuter, diskOuter - 6.0, dR) * smoothstep(diskInner, diskInner + 0.2, dR);
+              float radialFalloff = smoothstep(diskOuter, diskOuter - 4.0, dR) * smoothstep(diskInner, diskInner + 0.1, dR);
               
-              // [FIX] Uniform Sampling Integration
-              // Saat dilihat dari jauh, meratakan profil vertikal menjadi seragam (1.0) untuk menghilangkan variansi sampling.
-              // Ini menjamin halo/cincin lensed SELALU solid dan tidak terpotong-potong meskipun langkahnya sangat cepat.
-              float verticalFalloff = exp(-pow(h / (effThickness * 0.5), 2.5));
+              float verticalFalloff = exp(-pow(h / (effThickness * 0.45), 3.0));
               float isFar = smoothstep(0.1, 0.5, pixelSize); 
               verticalFalloff = mix(verticalFalloff, 1.0, isFar);
               
-              // Menormalisasi kepadatan agar disk menebal secara virtual tetapi massanya tetap konstan
-              float baseDens = radialFalloff * verticalFalloff * 8.0 * (diskThickness / effThickness); 
+              float baseDens = radialFalloff * verticalFalloff * 9.0 * (diskThickness / effThickness); 
               
               if (baseDens > 0.01) {
-                  // [FIX] Efek garis cincin (Banding) seperti Saturnus/Piringan Hitam sesuai referensi
-                  float rings = abs(sin(dR * 4.0 + fbm(vec3(dR * 0.5, 0.0, 0.0)) * 2.0));
-                  rings = mix(0.6, 1.0, smoothstep(0.2, 0.8, rings));
+                  // ==========================================
+                  // RING BANDING DETAIL — Banyak garis konsentris halus
+                  // Seperti referensi: garis-garis tipis berlapis
+                  // ==========================================
+                  float rings1 = abs(sin(dR * 5.0 + fbm(vec3(dR * 0.5, 0.0, 0.0)) * 2.5));
+                  float rings2 = abs(sin(dR * 12.0 + 1.7));
+                  float rings3 = abs(sin(dR * 22.0 + 3.1));
+                  float rings = mix(0.3, 1.0, smoothstep(0.1, 0.65, rings1));   // Celah gelap lebih dalam
+                  rings *= mix(0.7, 1.0, smoothstep(0.25, 0.65, rings2));
+                  rings *= mix(0.85, 1.0, smoothstep(0.35, 0.65, rings3));
                   
-                  float plasma = fbm(vec3(dR * 2.0, atan(p.z, p.x) * 3.0 - uTime * 0.5, p.y * 10.0));
-                  plasma = mix(0.5, 1.2, plasma) * rings; 
+                  // ==========================================
+                  // PLASMA TURBULENCE — Organik, mengalir, detail
+                  // 5 oktaf FBM untuk texture yang sangat kaya
+                  // ==========================================
+                  float angle = atan(p.z, p.x);
+                  float plasmaBase = fbm(vec3(dR * 2.5, angle * 3.0 - uTime * 0.5, p.y * 12.0));
+                  float plasmaFine = fbm(vec3(dR * 6.0, angle * 6.0 - uTime * 0.3, p.y * 20.0));
+                  float plasma = mix(0.4, 1.3, plasmaBase) * mix(0.7, 1.0, plasmaFine) * rings;
+                  
+                  // Streamer — garis cahaya tipis yang mengalir radial
+                  float streamer = fbm(vec3(angle * 8.0 + uTime * 0.2, dR * 0.8, 0.0));
+                  plasma *= mix(0.85, 1.15, streamer);
                   
                   float dens = baseDens * plasma;
                   
@@ -172,50 +175,46 @@ export const fragmentShader = `
                   float doppler = 1.0 + dot(v, vDisk) * 0.8; 
                   
                   float t_color = (dR - diskInner) / (diskOuter - diskInner);
-                  // [FIX] Palet warna Monokrom (Hitam Putih) agar menyatu dengan konsep ruang hampa
-                  vec3 coreColor = vec3(10.0, 10.0, 10.0);  
-                  vec3 midColor  = vec3(2.0, 2.0, 2.0);     
-                  vec3 edgeColor = vec3(0.2, 0.2, 0.2);   
+                  
+                  // PALET WARNA MONOKROM — Hitam Putih dengan kontras tinggi
+                  vec3 coreColor = vec3(16.0);   // Core: SANGAT putih intens
+                  vec3 midColor  = vec3(3.5);    // Mid: abu-abu terang
+                  vec3 edgeColor = vec3(0.08);   // Edge: hampir hitam
                   
                   vec3 emitColor;
-                  if (t_color < 0.2) emitColor = mix(coreColor, midColor, smoothstep(0.0, 0.2, t_color));
-                  else emitColor = mix(midColor, edgeColor, smoothstep(0.2, 1.0, t_color));
+                  if (t_color < 0.15) emitColor = mix(coreColor, midColor, smoothstep(0.0, 0.15, t_color));
+                  else emitColor = mix(midColor, edgeColor, smoothstep(0.15, 1.0, t_color));
                   
-                  // Doppler effect diperkuat agar sisi kiri sangat terang dan sisi kanan meredup/merah
                   vec3 emit = emitColor * dens * pow(doppler, 3.5);
                   
-                  float absorb = dens * dt * 15.0;
-                  // [FIX] Rumus emisi kini linear terhadap densitas (emit * dt) bukan kuadratik (emit * absorb)
-                  // Ini menjaga kecerahan cincin tetap absolut stabil walaupun ketebalan virtualnya membesar!
-                  col += emit * dt * trans * 4.0;
+                  float absorb = dens * dt * 22.0;
+                  col += emit * dt * trans * 5.0;
                   trans *= exp(-absorb);
               }
           }
           if (trans < 0.01) break;
       }
       
+      // Photon ring glow — putih bersih, intens
       col += vec3(1.0, 1.0, 1.0) * photonGlow * trans;
       
       // ==========================================
-      // MILKY WAY (PHYSICAL SPHERE FOR 3D ZOOM/SCALE)
+      // MILKY WAY + 3D PARALLAX STARFIELD
       // ==========================================
       if (trans > 0.01) {
-          // Bola fisik kosmik raksasa (Radius 800)
-          // Memastikan background ikut mengecil/membesar saat kamera bergerak maju/mundur
           float bgRadius = 800.0;
           
-          // [FIX] Proyeksikan dari posisi terakhir sinar (p), bukan kamera asli (ro)
-          // Ini mencegah noise abu-abu dan distorsi matematika saat kamera zoom-out jauh
+          // Proyeksikan dari posisi terakhir sinar (p)
           float b = dot(p, v);
           float c_sph = dot(p, p) - bgRadius * bgRadius;
           float det = b * b - c_sph;
           
-          vec3 bgDir = v; // Arah default
+          vec3 bgDir = v;
           if (det > 0.0) {
               float t_bg = -b + sqrt(det);
               if (t_bg > 0.0) {
-                  vec3 p_bg = p + v * t_bg; // Posisi fisik pada permukaan bola
-                  bgDir = normalize(p_bg); // Menyesuaikan proyeksi skala berdasarkan jarak kamera
+                  vec3 p_bg = p + v * t_bg;
+                  bgDir = normalize(p_bg);
               }
           }
           
@@ -248,27 +247,38 @@ export const fragmentShader = `
           float riftMask = smoothstep(0.1, 0.35, turb + distToEq * 0.4);
           galaxyGlow *= riftMask;
           
-          // 3. Taburan Bintang NASA-style (Warna-warni, Sangat Jarang, Parallax Skala)
-          
-          // Layer 1: Bintang Latar Belakang Jauh
-          float s1 = smoothStar(bgDir, 400.0);
-          vec3 c1 = mix(vec3(0.6, 0.8, 1.0), vec3(1.0, 0.8, 0.6), hash(bgDir * 10.0)); // Biru pucat ke Oranye
-          vec3 stars = c1 * s1 * 2.5;
-          
-          // Layer 2: Bintang Menengah 
-          float s2 = smoothStar(bgDir + vec3(10.0), 300.0);
-          vec3 c2 = mix(vec3(1.0, 0.9, 0.8), vec3(0.5, 0.7, 1.0), hash(bgDir * 20.0)); // Kuning ke Biru Terang
-          stars += c2 * s2 * 3.0;
-          
-          // Layer 3: Bintang Dekat 
-          float s3 = smoothStar(bgDir + vec3(20.0), 150.0);
-          vec3 c3 = mix(vec3(1.0, 1.0, 1.0), vec3(1.0, 0.5, 0.4), hash(bgDir * 30.0)); // Putih ke Merah
-          stars += c3 * s3 * 4.0;
-          
-          vec3 bgCol = vec3(galaxyGlow); 
-          bgCol += stars; 
-          
+          // Galaxy glow netral
+          vec3 bgCol = vec3(galaxyGlow);
           col += bgCol * trans;
+          
+          // ==========================================
+          // GRAVITATIONAL LENSING PADA BINTANG
+          // Sinar yang dibengkokkan gravitasi menunjuk ke arah berbeda
+          // dari arah aslinya — ini mendistorsi posisi bintang
+          // secara otomatis menciptakan efek lensing
+          // ==========================================
+          
+          // v = arah sinar setelah dibengkokkan gravitasi (dalam tilted space)
+          // Undo tilt rotation untuk kembali ke world space
+          mat2 invRotZ = mat2(c, s, -s, c);
+          vec2 unrotated = invRotZ * v.xy;
+          vec3 vWorld = vec3(unrotated, v.z);
+          
+          // Proyeksikan arah terbengkok ke screen UV
+          // viewMatrix & projectionMatrix dikirim sebagai uniform
+          vec3 vView = mat3(uViewMat) * vWorld;
+          
+          // Hanya sampel jika arah di depan kamera (z negatif di view space)
+          if (vView.z < 0.0) {
+              vec4 clipPos = uProjMatrix * vec4(vView * 1000.0, 1.0);
+              vec2 starUV = clipPos.xy / clipPos.w * 0.5 + 0.5;
+              
+              // Sampel bintang dari FBO dengan UV terdistorsi
+              if (starUV.x > 0.001 && starUV.x < 0.999 && starUV.y > 0.001 && starUV.y < 0.999) {
+                  vec3 starColor = texture2D(uStarTexture, starUV).rgb;
+                  col += starColor * trans;
+              }
+          }
       }
 
       // ACES Tone Mapping

@@ -1,10 +1,14 @@
 import React, { useRef, useMemo, useState } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree, createPortal } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import { vertexShader, fragmentShader } from './shaders'
+import Starfield3D from './Starfield3D'
 
-const BlackholeMass = ({ tilt }: { tilt: number }) => {
+// ============================================================
+// BLACKHOLE MESH — Shader raymarching + gravitational lensing pada bintang
+// ============================================================
+const BlackholeMass = ({ tilt, starTexture }: { tilt: number, starTexture: THREE.Texture }) => {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
   const { size, gl, camera } = useThree()
 
@@ -12,7 +16,10 @@ const BlackholeMass = ({ tilt }: { tilt: number }) => {
     uTime: { value: 0 },
     uResolution: { value: new THREE.Vector2(size.width, size.height) },
     uCameraPos: { value: new THREE.Vector3() },
-    uTilt: { value: tilt }
+    uTilt: { value: tilt },
+    uStarTexture: { value: starTexture },
+    uProjMatrix: { value: new THREE.Matrix4() },
+    uViewMat: { value: new THREE.Matrix4() },
   }), [size])
 
   // Memaksa update uniform saat slider digeser
@@ -29,45 +36,103 @@ const BlackholeMass = ({ tilt }: { tilt: number }) => {
         size.width * gl.getPixelRatio(),
         size.height * gl.getPixelRatio()
       )
-      // Kirim posisi kamera asli ke shader
       materialRef.current.uniforms.uCameraPos.value.copy(camera.position)
+      // Update star FBO texture + matrices untuk lensing
+      materialRef.current.uniforms.uStarTexture.value = starTexture
+      materialRef.current.uniforms.uProjMatrix.value.copy(camera.projectionMatrix)
+      materialRef.current.uniforms.uViewMat.value.copy(camera.matrixWorldInverse)
     }
   })
 
   return (
-    <mesh scale={[1500, 1500, 1500]}>
+    <mesh scale={[3000, 3000, 3000]}>
       {/* 
         Bola raksasa yang membungkus semesta. 
-        Shader merender simulasi di permukaan dalamnya. 
+        Shader merender blackhole + accretion disk + bintang terlensing.
       */}
-      <sphereGeometry args={[1, 64, 64]} />
+      <sphereGeometry args={[1, 128, 128]} />
       <shaderMaterial
         ref={materialRef}
         vertexShader={vertexShader}
         fragmentShader={fragmentShader}
         uniforms={uniforms}
-        side={THREE.BackSide} // Render bagian dalam bola
+        side={THREE.BackSide}
         transparent={false}
       />
     </mesh>
   )
 }
 
+// ============================================================
+// LENSED SCENE — Render bintang ke FBO, lalu blackhole sampel FBO
+// dengan UV terdistorsi oleh gravitasi
+// ============================================================
+function LensedScene({ tilt }: { tilt: number }) {
+  const { gl, camera, size } = useThree()
+  
+  // Scene terpisah untuk bintang
+  const starScene = useMemo(() => new THREE.Scene(), [])
+  
+  // FBO (Framebuffer Object) untuk merender bintang
+  const fbo = useMemo(() => new THREE.WebGLRenderTarget(1, 1, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+  }), [])
+  
+  useFrame(() => {
+    // Sesuaikan ukuran FBO dengan layar
+    const w = Math.floor(size.width * gl.getPixelRatio())
+    const h = Math.floor(size.height * gl.getPixelRatio())
+    if (fbo.width !== w || fbo.height !== h) {
+      fbo.setSize(w, h)
+    }
+    
+    // Render bintang ke FBO (framebuffer terpisah)
+    gl.setRenderTarget(fbo)
+    gl.setClearColor(0x000000, 1)
+    gl.clear()
+    gl.render(starScene, camera)
+    gl.setRenderTarget(null)
+    gl.setClearColor(0x000000, 1)
+  }, -1) // Priority -1: dijalankan SEBELUM useFrame lain
+  
+  return (
+    <>
+      {/* Bintang dirender ke FBO melalui portal */}
+      {createPortal(<Starfield3D />, starScene)}
+      
+      {/* Blackhole dengan texture bintang untuk gravitational lensing */}
+      <BlackholeMass tilt={tilt} starTexture={fbo.texture} />
+    </>
+  )
+}
+
+// ============================================================
+// APP UTAMA
+// ============================================================
 export default function App() {
   const [tilt, setTilt] = useState(-0.15); // Kemiringan default yang sinematik
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#000', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#000', overflow: 'hidden' }}>
       <Canvas 
         dpr={[1, 1.5]}
         gl={{ 
           antialias: false, 
-          powerPreference: "high-performance"
+          powerPreference: "high-performance",
+          alpha: false,
+        }}
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000' }}
+        onCreated={({ gl, scene }) => {
+          gl.setClearColor(0x000000, 1)
+          scene.background = new THREE.Color(0x000000)
         }}
       >
-        <PerspectiveCamera makeDefault position={[0, 6, 20]} fov={50} far={3000} />
+        <PerspectiveCamera makeDefault position={[0, 6, 20]} fov={50} far={7000} />
         
-        <BlackholeMass tilt={tilt} />
+        {/* Scene dengan gravitational lensing */}
+        <LensedScene tilt={tilt} />
         
         <OrbitControls 
           enableDamping 
