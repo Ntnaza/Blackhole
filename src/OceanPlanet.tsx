@@ -105,9 +105,9 @@ function createPlanetTexture(): { map: THREE.Texture, bumpMap: THREE.Texture, ro
 
       const idx = (y * width + x) * 4
 
-      let r = 0, g = 0, b = 0
-      let bump = 0
-      let roughness = 120
+      let r: number, g: number, b: number
+      let bump: number
+      let roughness: number
 
       if (isPolar) {
         // Es Kutub / Polar Caps

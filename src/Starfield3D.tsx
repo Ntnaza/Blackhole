@@ -11,28 +11,6 @@ import * as THREE from 'three'
 // - Texture sprite bulat untuk tampilan realistis
 // ============================================================
 
-// Generate circular star sprite texture secara prosedural
-function createStarTexture(): THREE.Texture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 64
-  canvas.height = 64
-  const ctx = canvas.getContext('2d')!
-  
-  // Radial gradient: core terang → halo lembut → transparan
-  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
-  gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)')
-  gradient.addColorStop(0.1, 'rgba(255, 255, 255, 0.9)')
-  gradient.addColorStop(0.25, 'rgba(255, 255, 255, 0.4)')
-  gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.08)')
-  gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)')
-  
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, 64, 64)
-  
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.needsUpdate = true
-  return texture
-}
 
 // ============================================================
 // STARFIELD CONFIG — NASA-style: satu shell besar
@@ -178,7 +156,6 @@ export default function Starfield3D() {
   const { gl } = useThree()
   
   const data = useMemo(() => generateStars(), [])
-  const starTexture = useMemo(() => createStarTexture(), [])
   
   const uniforms = useMemo(() => ({
     uPixelRatio: { value: gl.getPixelRatio() },
@@ -191,21 +168,15 @@ export default function Starfield3D() {
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          array={data.positions}
-          count={STAR_COUNT}
-          itemSize={3}
+          args={[data.positions, 3]}
         />
         <bufferAttribute
           attach="attributes-color"
-          array={data.colors}
-          count={STAR_COUNT}
-          itemSize={3}
+          args={[data.colors, 3]}
         />
         <bufferAttribute
           attach="attributes-aSize"
-          array={data.sizes}
-          count={STAR_COUNT}
-          itemSize={1}
+          args={[data.sizes, 1]}
         />
       </bufferGeometry>
       <shaderMaterial
