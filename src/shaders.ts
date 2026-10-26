@@ -14,6 +14,8 @@ export const fragmentShader = `
   uniform vec2 uResolution;
   uniform vec3 uCameraPos;
   uniform float uTilt;
+  uniform float uGlow;
+  uniform float uColorTheme;
   uniform sampler2D uStarTexture;
   uniform mat4 uProjMatrix;
   uniform mat4 uViewMat;
@@ -42,13 +44,13 @@ export const fragmentShader = `
                      mix( hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)),f.x),f.y),f.z);
   }
 
-  // 3-octave FBM teroptimasi untuk performa tinggi
+  // 2-octave FBM teroptimasi: 33% lebih hemat komputasi, visual tetap kaya
   float fbm(vec3 p) {
-      return 0.58 * noise(p) + 0.29 * noise(p * 2.04) + 0.13 * noise(p * 4.08);
+      return 0.65 * noise(p) + 0.35 * noise(p * 2.04);
   }
 
   // Bintang sekarang dirender sebagai partikel 3D oleh Starfield3D.tsx
-  // Shader hanya menangani blackhole, accretion disk, dan galaxy glow
+  // Shader hanya menangani blackhole, accretion disk, dan photon sphere
 
   void main() {
       vec3 ro = uCameraPos;
@@ -72,11 +74,13 @@ export const fragmentShader = `
       float photonGlow = 0.0;
 
       // ==========================================
-      // GARGANTUA ACCRETION DISK — Interstellar Texture
+      // GARGANTUA ACCRETION DISK — Geometri Fisik Kontinu
       // ==========================================
-      float diskInner = RS * 2.5; 
-      float diskOuter = RS * 14.0;  // Disk lebih ramping
-      float diskThickness = 0.1;   // Lebih tipis lagi
+      // Inner radius dimulai tepat di luar photon sphere (1.65 RS),
+      // memungkinkan plasma mengalir mulus tanpa rongga terputus di sekitar horizon
+      float diskInner = RS * 1.65; 
+      float diskOuter = RS * 14.0;
+      float diskThickness = 0.14;
       float maxR = 40.0;
       
       float r0 = length(p);
@@ -94,7 +98,7 @@ export const fragmentShader = `
           float r2 = dot(p, p);
           float r = sqrt(r2);
           
-          // Horizon peristiwa: menyerap seluruh cahaya yang masuk
+          // Horizon peristiwa: menyerap seluruh radiasi secara absolut
           if (r < RS * 1.05) { 
               trans = 0.0; 
               break; 
@@ -103,99 +107,155 @@ export const fragmentShader = `
 
           float dt = 0.06 + 0.045 * r; 
           float dR = length(p.xz);
+          float h = abs(p.y);
 
+          // Dither sub-pixel untuk memecah banding akibat langkah ray-marching
+          // yang sejajar pada bagian atas cakram. Amplitudonya kecil agar tidak
+          // menambah grain yang terlihat dan tidak menambah jumlah langkah.
+          float sampleJitter = hash(vec3(gl_FragCoord.xy, 17.31));
+          // Jitter kecil menjaga anti-banding tanpa meninggalkan bintik/grain.
+          dt *= mix(0.97, 1.03, sampleJitter);
+
+          // Penebalan flaring realistis: cakram tipis di dalam, mengembang lembut ke luar
+          float localThickness = diskThickness * (0.65 + 0.035 * dR);
+          float maxH = localThickness * 2.8;
+
+          // Adaptasi langkah presisi:
+          // Menyesuaikan langkah dengan kecepatan penetrasi vertikal (|v.y|).
+          // Pada sudut edge-on (|v.y| kecil), langkah horizontal lapang agar budget langkah (120)
+          // tidak habis sebelum menembus seluruh cakram (mencegah sayap terpotong & voxel stepping).
+          if (dR > diskInner - 0.5 && dR < diskOuter + 1.0 && h < maxH * 1.2) {
+              float dtVertical = localThickness / max(abs(v.y) * 2.8, 0.25);
+              float diskStep = clamp(dtVertical, 0.06, 0.18);
+              dt = min(dt, diskStep);
+          }
+
+          // Pembengkokan lintasan cahaya oleh gravitasi relativistik
           vec3 a = -1.5 * RS * h2 * p / (r2 * r2 * r);
           a *= smoothstep(maxR, 15.0, r); 
           
-          float h = abs(p.y);
-          float pixelSize = length(uCameraPos) * 0.002;
-          float effThickness = max(diskThickness + dt * 0.5, pixelSize); 
-          
-          if (dR > diskInner - 1.0 && dR < diskOuter + 2.0 && h < effThickness * 1.5) {
-              dt = min(dt, effThickness * 0.45); 
-          }
-          
           v = normalize(v + a * dt);
+          
+          // Analisis jarak terdekat segmen langkah ke photon sphere (r = 1.5 RS):
+          // Menjamin cincin foton SELALU tertangkap dengan mulus tanpa diskontinuitas garis putus-putus
+          float tClose = clamp(-dot(p, v), 0.0, dt);
+          vec3 pClose = p + v * tClose;
+          float rClose = length(pClose);
+          if (rClose < 3.2) {
+              float distPhoton = abs(rClose - 1.5 * RS);
+              // Ring tipis seperti referensi: distribusi lebih tajam mencegah halo
+              // putih melebar ke seluruh bagian dalam cakram.
+              float glowLevel = clamp(uGlow / 0.6, 0.0, 1.0);
+              float photonWidth = mix(42.0, 18.0, glowLevel);
+              photonGlow += exp(-distPhoton * photonWidth) * dt * trans * (2.3 + glowLevel * 10.0);
+          }
+
           p += v * dt;
 
+          // Koordinat p terkini setelah melangkah
+          r2 = dot(p, p);
+          r = sqrt(r2);
+          dR = length(p.xz);
+          h = abs(p.y);
+
+          if (r < RS * 1.05) {
+              trans = 0.0;
+              break;
+          }
+
           // ==========================================
-          // PHOTON RING — Cincin tipis terang di photon sphere (r = 1.5 RS)
+          // CAKRAM AKRESI: EMISI DAN ABSORPSI KONTINU
           // ==========================================
-          float distToPhoton = abs(r - 1.5 * RS);
-          photonGlow += exp(-distToPhoton * 42.0) * dt * trans * 4.5;
-          
-          // Inner glow — cahaya redup di dekat event horizon
-          float innerGlow = exp(-abs(r - RS * 1.25) * 14.0) * dt * trans * 1.2;
-          photonGlow += innerGlow;
-          
-          if (dR > diskInner && dR < diskOuter && h < effThickness) {
+          if (dR > diskInner && dR < diskOuter && h < maxH) {
               
-              float radialFalloff = smoothstep(diskOuter, diskOuter - 5.5, dR) * smoothstep(diskInner, diskInner + 0.12, dR);
+              // Outer falloff lebih panjang dan gelap, mengikuti referensi lama
+              // yang menghilang lembut ke ruang sebelum mencapai tepi cakram.
+              float radialFalloff = smoothstep(diskOuter, diskOuter - 6.5, dR) * smoothstep(diskInner, diskInner + 0.45, dR);
               
-              float verticalFalloff = exp(-pow(h / (effThickness * 0.45), 3.0));
-              float isFar = smoothstep(0.1, 0.5, pixelSize); 
-              verticalFalloff = mix(verticalFalloff, 1.0, isFar);
+              // Profil Gaussian vertikal kontinu (C^1 smooth):
+              // Menghilangkan pemotongan kaku garis horizontal flat pada lengkungan lensed
+              float verticalFalloff = exp(-0.5 * (h * h) / (localThickness * localThickness));
+              verticalFalloff *= smoothstep(maxH, maxH * 0.7, h);
               
-              float baseDens = radialFalloff * verticalFalloff * 8.0 * (diskThickness / effThickness); 
+              float baseDens = radialFalloff * verticalFalloff * 4.5; 
               
-              if (baseDens > 0.01) {
-                  // ==========================================
-                  // RING BANDING DETAIL — Garis konsentris berlapis tajam & halus
-                  // Sesuai referensi pengguna: bergaris-garis filamen terdistribusi rapi
-                  // ==========================================
-                  float fineRings1 = abs(sin(dR * 7.5 + sin(dR * 1.6 + uTime * 0.1) * 0.8));
-                  float fineRings2 = abs(sin(dR * 16.0 + 1.2));
-                  float fineRings3 = abs(sin(dR * 28.0 + 2.8));
-                  float fineRings4 = abs(sin(dR * 46.0 + 4.1));
-                  
-                  float rings = mix(0.28, 1.0, smoothstep(0.08, 0.65, fineRings1));
-                  rings *= mix(0.72, 1.08, smoothstep(0.18, 0.65, fineRings2));
-                  rings *= mix(0.80, 1.06, smoothstep(0.22, 0.60, fineRings3));
-                  rings *= mix(0.88, 1.04, smoothstep(0.25, 0.55, fineRings4));
-                  
-                  // ==========================================
-                  // PLASMA TURBULENCE — Organik, mengalir, detail tinggi
-                  // ==========================================
+              if (baseDens > 0.005) {
+                  // Rotasi diferensial Keplerian kontinu
                   float angle = atan(p.z, p.x);
-                  float plasmaBase = fbm(vec3(dR * 2.5, angle * 3.0 - uTime * 0.5, p.y * 12.0));
-                  float plasmaFine = noise(vec3(dR * 6.0, angle * 6.0 - uTime * 0.3, p.y * 20.0));
-                  float plasma = mix(0.45, 1.3, plasmaBase) * mix(0.75, 1.0, plasmaFine) * rings;
+                  float omega = 3.2 / (dR * sqrt(dR) + 0.2);
+                  float spiral = angle + omega * 2.5 - uTime * 0.90;
                   
-                  // Streamer — garis cahaya tipis yang mengalir radial
-                  float streamer = noise(vec3(angle * 8.0 + uTime * 0.2, dR * 0.8, 0.0));
-                  plasma *= mix(0.85, 1.15, streamer);
+                  float cSp = cos(spiral);
+                  float sSp = sin(spiral);
+                  vec2 pRot = mat2(cSp, -sSp, sSp, cSp) * p.xz;
+                  
+                  // Hindari pola sin radial yang menghasilkan garis konsentris
+                  // seperti contour map saat cakram terkena gravitational lensing.
+                  // Noise halus menjaga tekstur plasma tanpa garis periodik.
+                  float ringNoise = fbm(vec3(pRot * 0.22, 0.0));
+                  float rings = mix(0.84, 1.04, ringNoise);
+                  
+                  // Turbulensi 3D kontinu
+                  vec3 plasmaCoord = vec3(pRot * 0.45 + vec2(uTime * 0.07, -uTime * 0.035), p.y * 1.8);
+                  float plasma = mix(0.65, 1.25, fbm(plasmaCoord)) * rings;
                   
                   float dens = baseDens * plasma;
                   
+                  // Doppler beaming fisik terkalibrasi secara sinematik
                   vec3 vDisk = normalize(vec3(-p.z, 0.0, p.x));
-                  float doppler = 1.0 + dot(v, vDisk) * 0.80; 
+                  // Beaming yang sedikit lebih kuat mengembalikan perbedaan
+                  // sisi terang dan sisi bayangan seperti referensi lama.
+                  float doppler = 1.0 + dot(v, vDisk) * 0.70; 
                   
-                  float t_color = (dR - diskInner) / (diskOuter - diskInner);
+                  float t_color = clamp((dR - diskInner) / (diskOuter - diskInner), 0.0, 1.0);
                   
-                  // PALET WARNA REALISTIS KOSMIK — Emas, Amber, Oranye Menyala (Gargantua Interstellar)
-                  // Kontras seimbang persis referensi: tepian dalam putih pijar tipis,
-                  // diikuti spektrum emas & oranye kaya dengan detail garis konsentris jelas
-                  vec3 colHotWhite   = vec3(12.0, 10.8, 9.0); // Ujung terdalam: putih berpijar tipis
-                  vec3 colInnerGold  = vec3(4.5, 2.7, 0.75);  // Disk dalam: emas kosmik menyala
-                  vec3 colMidOrange  = vec3(1.9, 0.80, 0.14); // Disk tengah: oranye hangat
-                  vec3 colOuterAmber = vec3(0.68, 0.18, 0.025); // Disk luar: amber temaram
-                  vec3 colEdgeDark   = vec3(0.08, 0.015, 0.002); // Tepi terluar: merah kayu manis pudar
-                  
-                  vec3 emitColor;
-                  if (t_color < 0.035) {
-                      emitColor = mix(colHotWhite, colInnerGold, t_color / 0.035);
-                  } else if (t_color < 0.22) {
-                      emitColor = mix(colInnerGold, colMidOrange, (t_color - 0.035) / 0.185);
-                  } else if (t_color < 0.58) {
-                      emitColor = mix(colMidOrange, colOuterAmber, (t_color - 0.22) / 0.36);
+                  // Spektrum warna Gargantua Interstellar:
+                  // Inti putih-emas pijar memancar tembus gas luar yang hangat
+                  vec3 colHotWhite;
+                  vec3 colInnerGold;
+                  vec3 colMidOrange;
+                  vec3 colOuterAmber;
+                  vec3 colEdgeDark;
+
+                  // Palet terpisah hanya mengubah warna emisi; bentuk, bayangan,
+                  // dan biaya ray-marching tetap sama untuk semua tema.
+                  if (uColorTheme < 0.5) {
+                      // Ember — default hangat seperti referensi utama
+                      colHotWhite = vec3(9.0, 7.6, 5.8);
+                      colInnerGold = vec3(3.8, 2.0, 0.48);
+                      colMidOrange = vec3(1.45, 0.50, 0.07);
+                      colOuterAmber = vec3(0.34, 0.07, 0.009);
+                      colEdgeDark = vec3(0.035, 0.006, 0.001);
                   } else {
-                      emitColor = mix(colOuterAmber, colEdgeDark, (t_color - 0.58) / 0.42);
+                      // Mono — putih, abu-abu, dan hitam dengan highlight netral
+                      colHotWhite = vec3(10.0, 10.0, 10.0);
+                      colInnerGold = vec3(4.2, 4.2, 4.2);
+                      colMidOrange = vec3(1.55, 1.55, 1.55);
+                      colOuterAmber = vec3(0.34, 0.34, 0.34);
+                      colEdgeDark = vec3(0.035, 0.035, 0.035);
                   }
                   
-                  vec3 emit = emitColor * dens * pow(doppler, 3.2);
+                  // Gradasi overlap kontinu: setiap warna mulai memudar sebelum
+                  // warna berikutnya mengambil alih, sehingga tidak muncul lapisan
+                  // putih-oranye yang terputus secara tiba-tiba.
+                  float hotToGold = smoothstep(0.006, 0.060, t_color);
+                  float goldToOrange = smoothstep(0.12, 0.42, t_color);
+                  float orangeToAmber = smoothstep(0.34, 0.76, t_color);
+                  float amberToDark = smoothstep(0.68, 1.0, t_color);
+                  vec3 emitColor = mix(colHotWhite, colInnerGold, hotToGold);
+                  emitColor = mix(emitColor, colMidOrange, goldToOrange);
+                  emitColor = mix(emitColor, colOuterAmber, orangeToAmber);
+                  emitColor = mix(emitColor, colEdgeDark, amberToDark);
                   
-                  float absorb = dens * dt * 18.0;
-                  col += emit * dt * trans * 2.8;
+                  vec3 emit = emitColor * dens * pow(doppler, 3.0);
+                  
+                  // Koefisien absorpsi seimbang:
+                  // Memberi volume dan kedalaman nyata pada sudut miring tanpa membuat cakram depan
+                  // menjadi balok cokelat legap yang memutus Einstein ring di belakangnya
+                  // Absorpsi moderat memberi bayangan gelap tanpa membuat disk
+                  // kembali terlihat seperti bidang cokelat yang terpotong.
+                  float absorb = dens * dt * 4.8;
+                  col += emit * dt * trans * 2.15;
                   trans *= exp(-absorb);
               }
           }
@@ -203,7 +263,9 @@ export const fragmentShader = `
           if (trans < 0.01) break;
       }
       
-      // Photon ring glow — putih berpijar hangat, intens & tipis
+      // Photon ring glow — putih berpijar hangat, halus dan tajam
+      // Jangan tampilkan photon glow pada sinar yang sudah jatuh ke horizon;
+      // area bayangan black hole harus tetap benar-benar gelap.
       col += vec3(1.0, 0.95, 0.88) * photonGlow * trans;
       
       // ==========================================
@@ -258,7 +320,7 @@ export const fragmentShader = `
       }
 
       // ACES Tone Mapping
-      col *= 1.4; 
+      col *= 1.30; 
       float a_aces = 2.51; float b_aces = 0.03; float c_aces = 2.43; float d_aces = 0.59; float e_aces = 0.14;
       col = clamp((col * (a_aces * col + b_aces)) / (col * (c_aces * col + d_aces) + e_aces), 0.0, 1.0);
       

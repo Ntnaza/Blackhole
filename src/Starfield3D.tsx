@@ -1,5 +1,6 @@
 import { useRef, useMemo } from 'react'
-import { useThree } from '@react-three/fiber'
+
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
 // ============================================================
@@ -20,6 +21,9 @@ const RADIUS_MIN = 80
 const RADIUS_MAX = 800
 
 function generateStars() {
+  // Stable constellation across reloads, quality modes and photo sessions.
+  let seed = 7319
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
   const positions = new Float32Array(STAR_COUNT * 3)
   const colors = new Float32Array(STAR_COUNT * 3)
   const sizes = new Float32Array(STAR_COUNT)
@@ -28,14 +32,14 @@ function generateStars() {
   
   for (let i = 0; i < STAR_COUNT; i++) {
     // Distribusi bola seragam
-    const u = Math.random()
-    const v = Math.random()
+    const u = random()
+    const v = random()
     const theta = u * 2.0 * Math.PI
     const phi = Math.acos(2.0 * v - 1.0)
     
     // Distribusi radius: power law — kebanyakan di jarak menengah-jauh
     // tapi sebagian kecil di dekat untuk parallax kuat
-    const t = Math.random()
+    const t = random()
     const r = RADIUS_MIN + Math.pow(t, 0.6) * (RADIUS_MAX - RADIUS_MIN)
     
     positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
@@ -50,16 +54,16 @@ function generateStars() {
     const colorCategory = i % 4
     if (colorCategory === 0) {
       // Biru
-      color.setHSL(0.58 + Math.random() * 0.08, 0.85, 0.45 + Math.random() * 0.12)
+      color.setHSL(0.58 + random() * 0.08, 0.85, 0.45 + random() * 0.12)
     } else if (colorCategory === 1) {
       // Kuning / Emas
-      color.setHSL(0.12 + Math.random() * 0.05, 0.90, 0.50 + Math.random() * 0.12)
+      color.setHSL(0.12 + random() * 0.05, 0.90, 0.50 + random() * 0.12)
     } else if (colorCategory === 2) {
       // Oranye
-      color.setHSL(0.06 + Math.random() * 0.04, 0.95, 0.48 + Math.random() * 0.12)
+      color.setHSL(0.06 + random() * 0.04, 0.95, 0.48 + random() * 0.12)
     } else {
       // Merah / Ruby
-      color.setHSL(0.00 + Math.random() * 0.04, 0.92, 0.48 + Math.random() * 0.12)
+      color.setHSL(0.00 + random() * 0.04, 0.92, 0.48 + random() * 0.12)
     }
     
     colors[i * 3] = color.r
@@ -67,19 +71,19 @@ function generateStars() {
     colors[i * 3 + 2] = color.b
     
     // Variasi ukuran (mempertahankan warna masing-masing)
-    const sizeRng = Math.random()
+    const sizeRng = random()
     if (sizeRng > 0.97) {
       // Bintang besar (~3%)
-      sizes[i] = 4.5 + Math.random() * 2.5
+      sizes[i] = 4.5 + random() * 2.5
     } else if (sizeRng > 0.90) {
       // Bintang agak besar (~7%)
-      sizes[i] = 2.5 + Math.random() * 2.0
+      sizes[i] = 2.5 + random() * 2.0
     } else if (sizeRng > 0.65) {
       // Bintang sedang (~25%)
-      sizes[i] = 1.2 + Math.random() * 1.3
+      sizes[i] = 1.2 + random() * 1.3
     } else {
       // Bintang kecil (~65%)
-      sizes[i] = 0.4 + Math.random() * 0.8
+      sizes[i] = 0.4 + random() * 0.8
     }
   }
   
@@ -105,17 +109,17 @@ const vertexShader = `
     
     // Ukuran perspektif
     float pointSize = aSize * uPixelRatio * (400.0 / max(dist, 1.0));
-    pointSize = clamp(pointSize, 2.5, 12.0);  // Min 2.5px — anti kelap-kelip
+    pointSize = clamp(pointSize, 2.5 * uPixelRatio, 12.0 * uPixelRatio);  // Min 2.5px — anti kelap-kelip
     
     gl_PointSize = pointSize;
     gl_Position = projectionMatrix * mvPosition;
     
     // Fade halus berdasarkan jarak
-    vAlpha = smoothstep(3500.0, 200.0, dist);
+    vAlpha = (1.0 - smoothstep(200.0, 3500.0, dist));
     
     // Anti kelap-kelip AGRESIF: bintang kecil sangat pudar
     // Semakin kecil bintang, semakin transparan — mencegah flicker subpixel
-    float sizeFade = smoothstep(2.0, 4.5, pointSize);
+    float sizeFade = smoothstep(2.0, 4.5, pointSize / uPixelRatio);
     vAlpha *= sizeFade;
   }
 `
@@ -137,7 +141,7 @@ const fragmentShader = `
     if (dist > 0.47) discard;
     
     // Smooth edge
-    float edgeFade = smoothstep(0.47, 0.3, dist);
+    float edgeFade = (1.0 - smoothstep(0.3, 0.47, dist));
     star *= edgeFade;
     
     float alpha = star * vAlpha;
@@ -153,15 +157,20 @@ const fragmentShader = `
 // ============================================================
 export default function Starfield3D() {
   const materialRef = useRef<THREE.ShaderMaterial>(null!)
-  const { gl } = useThree()
+
   
   const data = useMemo(() => generateStars(), [])
   
   const uniforms = useMemo(() => ({
-    uPixelRatio: { value: gl.getPixelRatio() },
-  }), [gl])
+    uPixelRatio: { value: 1.0 },
+  }), [])
   
-  // Tidak perlu useFrame karena tidak ada twinkling/animasi
+  // Quality changes must not change the apparent size or brightness of the stars.
+  useFrame(({ gl }) => {
+    if (materialRef.current?.uniforms?.uPixelRatio) {
+      materialRef.current.uniforms.uPixelRatio.value = gl.getPixelRatio()
+    }
+  }, -1)
   
   return (
     <points frustumCulled={false}>
@@ -193,3 +202,5 @@ export default function Starfield3D() {
     </points>
   )
 }
+
+

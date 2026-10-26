@@ -1,1 +1,121 @@
-/* Cleaned for Blackhole Project */
+.observatory { position: fixed; inset: 0; overflow: hidden; background: #000; }
+.universe { position: absolute !important; inset: 0; opacity: 0; transition: opacity 1.2s ease; }
+.is-ready .universe { opacity: 1; }
+button { border: 1px solid transparent; border-radius: 8px; background: transparent; color: #aaa8a3; padding: 9px 12px; font-size: 12px; min-height: 38px; transition: color .2s, background .2s, border-color .2s; }
+button:hover:not(:disabled) { color: #fff5e5; background: #ffffff0c; }
+button[aria-pressed=true], button[aria-expanded=true] { color: #efc893; background: #dcac6514; border-color: #d5ac6426; }
+.masthead { position: absolute; top: max(30px, env(safe-area-inset-top)); left: 36px; pointer-events: none; }
+.wordmark { display: flex; align-items: center; gap: 13px; font-size: 13px; letter-spacing: 4px; font-weight: 600; }
+.wordmark small { display: block; font-size: 8px; font-weight: 400; letter-spacing: 2.1px; color: #8c8881; margin-top: 7px; }
+.orbit-mark { width: 28px; height: 28px; border: 1px solid #c6a67c; border-radius: 50%; box-shadow: 0 0 14px #bc854b25; position: relative; }
+.orbit-mark::after { content: ''; position: absolute; inset: 8px -7px; border: 1px solid #c6a67c; border-radius: 50%; transform: rotate(-24deg); }
+.scene-tag { display: block; margin-top: 24px; color: #8a8277; font-size: 9px; letter-spacing: 2px; }
+.top-actions { position: absolute; right: 28px; top: max(25px, env(safe-area-inset-top)); display: flex; gap: 4px; }
+.color-actions { display: flex; gap: 4px; margin-left: 7px; padding-left: 7px; border-left: 1px solid #ffffff18; }
+.bottom-ui { position: absolute; bottom: max(54px, calc(env(safe-area-inset-bottom) + 16px)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); display: flex; align-items: center; flex-direction: column; gap: 12px; }
+.control-dock, .floating-panel { background: #101012d9; border: 1px solid #ffffff1a; backdrop-filter: blur(18px); box-shadow: 0 12px 50px #0008; }
+.control-dock { padding: 8px 12px 10px; border-radius: 19px; width: 100%; }
+.view-presets { display: flex; justify-content: center; gap: 4px; padding-bottom: 7px; border-bottom: 1px solid #ffffff0b; }
+.view-presets button { font-size: 10px; letter-spacing: .6px; min-height: 30px; padding: 6px 15px; }
+.dock-main { display: flex; gap: 3px; align-items: center; padding-top: 7px; }
+.tilt-control { display: flex; align-items: center; gap: 12px; padding: 0 10px; }
+.tilt-control label { font-size: 9px; letter-spacing: 1.4px; white-space: nowrap; color: #c8c2b9; }
+.tilt-control output { font-size: 11px; font-variant-numeric: tabular-nums; width: 32px; color: #e3c299; }
+input[type=range] { appearance: none; width: 135px; height: 22px; background: transparent; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 3px; background: #655749; border-radius: 4px; }
+input[type=range]::-moz-range-track { height: 3px; background: #655749; border-radius: 4px; }
+input[type=range]::-webkit-slider-thumb { appearance: none; width: 11px; height: 11px; border-radius: 50%; background: #e6d4b9; margin-top: -4px; box-shadow: 0 0 12px #cda76b44; }
+input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border: none; border-radius: 50%; background: #e6d4b9; }
+.dock-divider { height: 18px; width: 1px; background: #ffffff17; margin: 0 6px; }
+.gesture-hint { margin: 0 0 3px; font-size: 11px; color: #a39c90; text-align: center; line-height: 1.6; text-shadow: 0 1px 8px #000; }
+.gesture-hint span, .performance span { padding: 0 8px; color: #746350; }
+.floating-panel { border-radius: 17px; padding: 20px; animation: enter .22s ease-out; }
+.settings-panel { width: 340px; max-width: 100%; max-height: min(440px, 55dvh); overflow-y: auto; align-self: flex-end; }
+.panel-title { display: flex; justify-content: space-between; align-items: center; font-size: 9px; letter-spacing: 1.7px; color: #c9ac87; margin-bottom: 15px; }
+.panel-title button { padding: 0 10px; min-height: 28px; font-size: 20px; }
+.settings-heading { margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid #ffffff10; color: #8f7c66; font-size: 8px; letter-spacing: 1.8px; }
+.setting { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 17px 0; font-size: 12px; }
+.setting label { color: #c9c4bc; }
+.setting output { color: #8c857c; font-size: 10px; margin-left: 6px; }
+select { background: #1d1b19; color: #e5d7c4; padding: 7px 10px; border: 1px solid #ffffff18; border-radius: 7px; }
+.toggle-grid { border-top: 1px solid #ffffff10; padding-top: 10px; display: grid; gap: 4px; }
+.toggle-grid button { display: flex; align-items: center; justify-content: space-between; text-align: left; }
+.toggle-grid span { font-size: 9px; letter-spacing: 1px; }
+.performance { color: #8d867d; margin: 15px 0 0; font-size: 10px; font-variant-numeric: tabular-nums; }
+.info-panel { position: absolute; top: 82px; right: 34px; width: 330px; max-width: calc(100% - 32px); max-height: calc(100dvh - 260px); overflow: auto; }
+.info-panel h2 { font-weight: 400; font-size: 23px; letter-spacing: -.6px; margin: 12px 0; }
+.info-panel p, .info-panel dd { color: #aaa49a; font-size: 12px; line-height: 1.75; }
+.info-panel dt { font-size: 11px; color: #e4c8a0; margin-top: 14px; }
+.info-panel dd { margin: 4px 0; }
+.info-panel .fine-print { border-top: 1px solid #ffffff10; padding-top: 12px; font-size: 10px; }
+.scene-footer { position: absolute; bottom: 20px; left: 36px; right: 36px; display: flex; justify-content: space-between; color: #777169; font-size: 8px; letter-spacing: 2px; pointer-events: none; }
+.capture-button { background: #d7bd96; color: #17120c; min-width: 180px; border-radius: 30px; box-shadow: 0 5px 30px #000; }
+.capture-button:hover:not(:disabled) { background: #f2d7af; color: #17120c; }
+.capture-button span { margin-left: 20px; }
+.restore-ui { position: absolute; bottom: max(20px, env(safe-area-inset-bottom)); right: 24px; background: #121214b3; border-color: #ffffff16; opacity: .45; }
+.restore-ui:hover, .restore-ui:focus-visible { opacity: 1; }
+kbd { font-size: 9px; margin-left: 10px; }
+.toast { position: absolute; top: 88px; left: 50%; transform: translateX(-50%); max-width: 80%; border-radius: 12px; background: #181613eb; color: #e6cfac; font-size: 12px; text-align: center; z-index: 5; }
+.toast:not(:empty) { padding: 12px 18px; border: 1px solid #cbb18a30; }
+.loading, .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 15px; color: #b8a48b; font-size: 13px; text-align: center; padding: 24px; }
+.fallback { z-index: 10; background: #080808; }
+.fallback h1 { font-size: 20px; }
+.loading span { width: 30px; height: 30px; border: 1px solid #b8a48b30; border-top-color: #b8a48b; border-radius: 50%; animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 700px) {
+  .masthead { left: 20px; top: max(22px, env(safe-area-inset-top)); }
+  .wordmark { font-size: 11px; letter-spacing: 2px; }
+  .wordmark small { font-size: 6px; letter-spacing: 1.3px; }
+  .orbit-mark { width: 22px; height: 22px; }
+  .scene-tag { font-size: 7px; margin-top: 18px; }
+  .top-actions { top: max(15px, env(safe-area-inset-top)); right: 12px; gap: 0; }
+  .top-actions button { font-size: 10px; padding: 8px; }
+  .top-actions button:nth-child(2) { display: none; }
+  .bottom-ui { bottom: max(20px, calc(env(safe-area-inset-bottom) + 12px)); width: 380px; }
+  .dock-main { flex-wrap: wrap; justify-content: center; }
+  .tilt-control { width: 100%; padding: 4px 10px 8px; justify-content: center; }
+  .tilt-control input { flex: 1; }
+  .dock-divider { display: none; }
+  .dock-main > button { flex: 1; padding: 8px 4px; font-size: 11px; }
+  .view-presets { flex-wrap: wrap; }
+  .view-presets button { padding: 6px 10px; flex: 1 1 auto; }
+  .scene-footer { display: none; }
+  .info-panel { right: 16px; top: 88px; max-height: calc(100dvh - 290px); }
+  .gesture-hint { font-size: 10px; }
+  .settings-panel { width: 100%; max-height: calc(100dvh - 280px); }
+}
+@media (max-height: 550px) and (min-width: 701px) { .bottom-ui { bottom: 15px; } .scene-footer, .scene-tag { display: none; } .settings-panel { max-height: calc(100dvh - 165px); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+.control-help { color: #aaa49a; font-size: 10px; line-height: 1.65; margin: 12px 0 0; }
+input:disabled { opacity: .4; cursor: default; }
+
+/* Quiet, warm scrollbars that belong to the glass panels. */
+.floating-panel {
+  scrollbar-width: thin;
+  scrollbar-color: #8b7252 #ffffff05;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.floating-panel::-webkit-scrollbar { width: 6px; height: 6px; }
+.floating-panel::-webkit-scrollbar-track { background: #ffffff05; border-radius: 10px; margin-block: 16px; }
+.floating-panel::-webkit-scrollbar-thumb { background: #8b7252; border-radius: 10px; border: 1px solid #151416; }
+.floating-panel::-webkit-scrollbar-thumb:hover { background: #c6a67c; }
+.floating-panel::-webkit-scrollbar-corner { background: transparent; }
+.setting input { min-width: 0; flex-shrink: 1; }
+@media (max-width: 700px) {
+  .view-presets button, .dock-main > button, .toggle-grid button { min-height: 44px; }
+  .settings-panel { max-height: calc(100dvh - 310px); }
+  .control-dock, .floating-panel { backdrop-filter: blur(10px); }
+  .panel-title button { min-height: 36px; min-width: 36px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .settings-panel { position: fixed; bottom: 115px; right: 0; width: 320px; max-height: calc(100dvh - 135px); }
+  .masthead { top: 14px; }
+  .scene-tag, .gesture-hint, .scene-footer { display: none; }
+}
+@supports selector(::-webkit-scrollbar) {
+  .floating-panel { scrollbar-width: auto; scrollbar-color: auto; }
+  .floating-panel::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+}
